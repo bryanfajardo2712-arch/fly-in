@@ -1,90 +1,35 @@
+import sys
+from typing import cast
 from lark import Lark
-from lark.exceptions import UnexpectedInput
-from larkgrammaty import GRAMMAR
-from dataclasses import dataclass
-from enum import Enum
+from lark.exceptions import UnexpectedInput, VisitError
+from larkgrammaty import HUB_GRAMMAR, CONNECTION_GRAMMAR
+from models import Zone
+from transform_data import HubTransformer
 
-parser = Lark(GRAMMAR)
-
-
-class ZoneType(Enum):
-    NORMAL = "normal"
-    BLOCKED = "blocked"
-    RESTRICTED = "restricted"
-    PRIORITY = "priority"
+parser = Lark(HUB_GRAMMAR, parser="lalr", transformer=HubTransformer())
 
 
-class ZoneRol(Enum):
-    START_HUB = "start_hub"
-    HUB = "hub"
-    END_HUB = "end_hub"
-
-
-@dataclass
-class Zone:
-    name: str
-    x: int
-    y: int
-    zone_type: ZoneType = ZoneType.NORMAL
-    color: str | None = None
-    max_drones: int = 1
-    role: ZoneRol = ZoneRol.HUB
-
-
-@dataclass
-class Connection:
-    zone_a: Zone
-    zone_b: Zone
-    max_link_capacity: int = 1
-
-
-def read_max_drones(drones: str) -> int:
-    """Convierte el texto  de Max drones en un entero positvo"""
+def parse_file(path: str) -> list[Zone]:
+    """Lee un archivo de mapa y devuelve sus zonas."""
+    zones: list[Zone] = []
     try:
-        num_drones = int(drones)
-    except ValueError:
-        raise ValueError(f"'max_drones' is not a number:'{drones}'")
-    if num_drones <= 0:
-        raise ValueError(f"'max_drones' must to"
-                         f"be a positive number:'{drones}'")
-    return num_drones
+        with open(path) as file:
+            lines = file.readlines()
+    except OSError as error:
+        print(f"Error: no se puede leer '{path}': {error}")
+        sys.exit(1)
 
-
-def assign_role(text: str) -> ZoneRol:
-    return ZoneRol(text)
-
-
-def assign_words(data: str) -> Zone:
-    head, _, meta = data.partition("[")
-    words = head.split()
-    role = assign_role(words[0].removesuffix(":"))
-    name = words[1]
-    x = int(words[2])
-    y = int(words[3])
-    zone_type = ZoneType.NORMAL
-    color = None
-    max_drones = 1
-    for attribute in meta.strip("] \n").split():
-        key, value = attribute.split("=")
-        if key == "zone":
-            zone_type = ZoneType(value)
-        elif key == "color":
-            color = value
-        elif key == "max_drones":
-            max_drones = read_max_drones(value)
-
-    return Zone(
-        name=name,
-        x=x,
-        y=y,
-        zone_type=zone_type,
-        color=color,
-        role=role,
-        max_drones=max_drones
-    )
-
-
-try:
-    tree = parser.parse("4ub: roof1 3 4 [zone=restricted]")
-except UnexpectedInput as e:
-    print(f"format error on the line : {e.line}, column {e.column}")
+    for number, line in enumerate(lines, start=1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            zone = cast(Zone, parser.parse(line))
+            zones.append(zone)
+        except UnexpectedInput:
+            print(f"Línea {number}: formato incorrecto")
+            sys.exit(1)
+        except VisitError as error:
+            print(f"Línea {number}: {error.orig_exc}")
+            sys.exit(1)
+    return zones
