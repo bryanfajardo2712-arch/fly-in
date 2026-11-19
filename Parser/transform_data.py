@@ -1,11 +1,12 @@
 from typing import Any
 from lark import Token, Transformer
 from models import Zone, ZoneRol, ZoneType, read_max_drones
+from models import Connection
 
 
 class HubTransformer(Transformer[Token, Zone]):
     def pair(self, items: list[Token]) -> tuple[str, str]:
-        return (str(items), str(items))
+        return (str(items[0]), str(items[1]))
 
     def metadata(self, items: list[tuple[str, str]]) -> dict[str, str]:
         return dict(items)
@@ -42,22 +43,41 @@ class HubTransformer(Transformer[Token, Zone]):
         )
 
 
-class ConnectionTransformer(Transformer[Token, Zone, Zone]):
-    def metadata(self, items: list[tuple[str, str]]) -> dict[str, str]:
-        return dict(items)
+class ConnectionTransformer(Transformer[Token, Connection]):
+    def __init__(self, zones_by_name: dict[str, Zone]) -> None:
+        super().__init__()
+        self.zones_by_name = zones_by_name
 
     def zone(self, items: list[Token]) -> tuple[str, str]:
-        return (str(items), str(items))
+        return (str(items[0]), str(items[1]))
+
+    def metadata(self, items: list[Token]) -> int:
+        capacity = int(items[0])
+        if capacity <= 0:
+            raise ValueError(f"'max_link_capacity' must be"
+                             f" positve: '{capacity}'")
+        return capacity
 
     def start(self, items: list[Any]) -> Connection:
-        zone_a = items[1]
-        zone_b = items[2]
-        max_link_capacity = 1
-        if len[items] > 3:
-            max_link_capacity = items[4]
+        name_a, name_b = items[1]
+        max_link_capacity: int = items[2] if len(items) > 2 else 1
+
+        if name_a not in self.zones_by_name:
+            raise ValueError(f"Zona desconocida en conexion: '{name_a}'")
+        if name_b not in self.zones_by_name:
+            raise ValueError(f"zona desconocida en conexion: '{name_b}'")
 
         return Connection(
-            zone_a= zone_a,
-            zone_b= zone_b,
-            max_link_capacity= max_link_capacity
+            zone_a=self.zones_by_name[name_a],
+            zone_b=self.zones_by_name[name_b],
+            max_link_capacity=max_link_capacity
         )
+
+
+class NbDronesTransformer(Transformer[Token, int]):
+    def start(self, items: list[Token]) -> int:
+        nb_drones = int(items[-1])
+        if nb_drones <= 0:
+            raise ValueError(f"'nb_drones' must be a "
+                             f"positive number: '{nb_drones}'")
+        return nb_drones
